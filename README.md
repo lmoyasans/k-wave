@@ -15,7 +15,6 @@ $ make help
 $ make build
 $ make publish-local 
 ```
-**Note**: to build the image, you need an account [to download k-Wave](http://www.k-wave.org/download.php). In version 1.0.0 the pre-compiled executables are used.
 
 ### How to test
 Use as input the file `validation/input/input.h5`. Running the service should generate an `output.h5` file. 

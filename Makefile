@@ -1,5 +1,6 @@
 #
 # Author: Elisabetta Iavarone
+#         Lucia Moya-Sans
 
 SHELL = /bin/sh
 .DEFAULT_GOAL := help

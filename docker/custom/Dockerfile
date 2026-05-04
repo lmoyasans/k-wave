@@ -1,15 +1,3 @@
-
-#  USAGE:
-#     cd ~/k-wave
-#     docker build -f docker/custom/Dockerfile -t k-wave:2.0.0 --target production .
-#     docker run k-wave:2.0.0
-#
-# WHY v2.0.0:
-#   v1.0.0 used itisfoundation/k-wave:1.0.0 which embedded the kspaceFirstOrder-CUDA
-#   binary compiled against CUDA 11.2 (max sm_86). That runtime cannot initialise
-#   Ada Lovelace (sm_89, RTX 4070) or Hopper (sm_90) GPUs and returns
-#   "CUDA device id 0 is busy or unavailable".
-#
 #   v2.0.0 builds kspaceFirstOrder-CUDA from source
 #   (https://github.com/klepo/k-Wave-Fluid-CUDA) using CUDA 12.2 and targets
 #   sm_75 (Turing) through sm_90 (Hopper), covering all current consumer and
@@ -18,13 +6,7 @@
 # ======================== Build stage ========================
 FROM nvidia/cuda:12.2.2-devel-ubuntu22.04 AS build
 
-#  USAGE:
-#     cd services/k-wave
-#     docker build -f Dockerfile -t k-wave:prod --target production ../../
-#     docker run k-wave:prod
-#
-
-LABEL maintainer=elisabettai
+LABEL maintainer=lmoyasans
 
 ENV SC_BUILD_TARGET=build
 
@@ -99,8 +81,6 @@ RUN mkdir -p /build/bin \
 # simcore-user uid=8004(${SC_USER_NAME}) gid=8004(${SC_USER_NAME}) groups=8004(${SC_USER_NAME})
 FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS production
 
-LABEL maintainer=elisabettai
-
 ENV SC_USER_ID=8004 \
     SC_USER_NAME=scu
 
@@ -114,9 +94,8 @@ ENV INPUT_FOLDER="/input" \
     OUTPUT_FOLDER="/output"
 
 # GPU access: all modern NVIDIA GPUs are visible.
-# Ada Lovelace (RTX 4070 = sm_89) and Hopper (sm_90) are fully supported.
+# Ada Lovelace (sm_89) and Hopper (sm_90) are fully supported.
 # Requires CUDA-capable driver ≥ 525 (ships CUDA 12.0 user-space ABI).
-# brand=tesla is intentionally omitted so consumer GPUs (GeForce) are accepted.
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     NVIDIA_REQUIRE_CUDA="cuda>=12.0 driver>=525"
@@ -128,11 +107,6 @@ RUN apt-get update \
     jq \
     libgomp1 \
  && rm -rf /var/lib/apt/lists/*
-
-# kspaceFirstOrder-CUDA is compiled with SEMI linking: cuFFT is the only
-# dynamic CUDA math library dependency. The runtime image does not ship it,
-# so copy the versioned .so and its symlinks from the build stage.
-COPY --from=build /usr/local/cuda/lib64/libcufft.so* /usr/local/cuda/lib64/
 
 # copy docker bootup scripts
 COPY --chown=${SC_USER_NAME}:${SC_USER_NAME} docker/custom/*.sh docker/

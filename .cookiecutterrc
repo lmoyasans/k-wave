@@ -17,16 +17,16 @@
 
 default_context:
 
-    _output_dir:               '/home/iavarone/repos'
+    _output_dir:               '/home/lmoyasans/repos'
     _template:                 'gh:ITISFoundation/cookiecutter-osparc-service'
     author_affiliation:        "IT'IS Foundation"
-    author_email:              'iavarone@itis.swiss'
-    author_name:               'Elisabetta Iavarone'
-    contact_email:             'iavarone@itis.swiss'
+    author_email:              'moyasans@itis.swiss'
+    author_name:               'Lucia Moya-Sans'
+    contact_email:             'moyasans@itis.swiss'
     default_docker_registry:   'itisfoundation'
     docker_base:               'custom:special-image'
     git_repo:                  'github'
-    git_username:              'elisabettai'
+    git_username:              'lmoyasans'
     number_of_inputs:          '1'
     number_of_outputs:         '1'
     project_name:              'k-Wave'
@@ -35,4 +35,4 @@ default_context:
     project_slug:              'k-wave'
     project_type:              'computational'
     release_date:              '2023'
-    version:                   '1.0.0'
+    version:                   '2.0.0'

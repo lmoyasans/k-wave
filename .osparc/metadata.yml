@@ -4,11 +4,14 @@ type: computational
 integration-version: 1.0.0
 version: 2.0.0
 description: k-Wave is a MATLAB toolbox for the time-domain simulation of acoustic wave fields. This service uses the kspaceFirstOrder-CUDA function to run 3D time-domain simulation of wave propagation on a GPU using C++ CUDA code. Built with CUDA 12.2; supports Turing (sm_75) through Ada Lovelace (sm_89, RTX 4070) and Hopper (sm_90). <br><br> Have an issue? Create one at https://github.com/ITISFoundation/k-wave/issues 
-contact: iavarone@itis.swiss
+contact: moyasans@itis.swiss
 thumbnail: https://pbs.twimg.com/media/ER4wiXEWkAAY-GD.jpg
 authors:
   - name: Elisabetta Iavarone
     email: iavarone@itis.swiss
+    affiliation: IT'IS Foundation
+  - name: Lucia Moya-Sans
+    email: moyasans@itis.swiss
     affiliation: IT'IS Foundation
 inputs:
   input_1:
