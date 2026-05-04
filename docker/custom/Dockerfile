@@ -1,5 +1,23 @@
-FROM nvidia/cudagl:11.2.2-runtime-ubuntu20.04 as base
+
+#  USAGE:
+#     cd ~/k-wave
+#     docker build -f docker/custom/Dockerfile -t k-wave:2.0.0 --target production .
+#     docker run k-wave:2.0.0
 #
+# WHY v2.0.0:
+#   v1.0.0 used itisfoundation/k-wave:1.0.0 which embedded the kspaceFirstOrder-CUDA
+#   binary compiled against CUDA 11.2 (max sm_86). That runtime cannot initialise
+#   Ada Lovelace (sm_89, RTX 4070) or Hopper (sm_90) GPUs and returns
+#   "CUDA device id 0 is busy or unavailable".
+#
+#   v2.0.0 builds kspaceFirstOrder-CUDA from source
+#   (https://github.com/klepo/k-Wave-Fluid-CUDA) using CUDA 12.2 and targets
+#   sm_75 (Turing) through sm_90 (Hopper), covering all current consumer and
+#   data-centre NVIDIA GPUs.
+
+# ======================== Build stage ========================
+FROM nvidia/cuda:12.2.2-devel-ubuntu22.04 AS build
+
 #  USAGE:
 #     cd services/k-wave
 #     docker build -f Dockerfile -t k-wave:prod --target production ../../
@@ -8,89 +26,113 @@ FROM nvidia/cudagl:11.2.2-runtime-ubuntu20.04 as base
 
 LABEL maintainer=elisabettai
 
-# simcore-user uid=8004(${SC_USER_NAME}) gid=8004(${SC_USER_NAME}) groups=8004(${SC_USER_NAME})
-ENV SC_USER_ID 8004
-ENV SC_USER_NAME scu
-RUN adduser --uid ${SC_USER_ID} --disabled-password --gecos "" --shell /bin/sh --home /home/${SC_USER_NAME} ${SC_USER_NAME}
+ENV SC_BUILD_TARGET=build
 
-RUN apt-get update \
-    && apt-get -y install --no-install-recommends \
-    jq \
-    && rm --recursive --force /var/lib/apt/lists/*
-
-# -------------------------- Build stage -------------------
-# Installs build/package management tools and third party dependencies
-#
-# + /build             WORKDIR
-#
-
-FROM base as build
-
-ENV SC_BUILD_TARGET build
-
-ARG KWAVE_PASSWORD
-ARG KWAVE_LOGIN
-# ------------------------------------------------------------------------------------
-# build dependencies shall be installed
 RUN apt-get update \
  && apt-get -y install --no-install-recommends \
- unzip \
- gcc \
- curl \
-&& rm -rf /var/lib/apt/lists/*
+    git \
+    make \
+    g++ \
+    libhdf5-dev \
+    zlib1g-dev \
+    libaec-dev \
+ && rm -rf /var/lib/apt/lists/*
 
-# ------------------------------------------------------------------------------------
-# Download binaries (get authentication cookie to login to http://www.k-wave.org/download.php and download the file with the cookie)
-# Note, you need to have a valid login and export credentials as env. variables
+# Create the HDF5 prefix layout expected by the k-Wave Makefile:
+#   $(HDF5_DIR)/include  and  $(HDF5_DIR)/lib
+# Ubuntu 22.04 puts the serial-variant files in non-standard sub-directories.
+RUN mkdir -p /opt/hdf5 \
+ && ln -s /usr/include/hdf5/serial       /opt/hdf5/include \
+ && ln -s /usr/lib/x86_64-linux-gnu/hdf5/serial /opt/hdf5/lib
+
+# libaec-dev provides SZIP compatibility; ensure libsz.a is reachable.
+RUN ls /usr/lib/x86_64-linux-gnu/libsz.a 2>/dev/null \
+ || ln -s /usr/lib/x86_64-linux-gnu/libaec.a \
+          /usr/lib/x86_64-linux-gnu/libsz.a
 
 WORKDIR /build
 
+# Clone the open-source k-Wave CUDA fluid solver.
+RUN git clone --depth 1 https://github.com/klepo/k-Wave-Fluid-CUDA.git .
 
-RUN curl --cookie-jar cookie.txt --form password=$KWAVE_PASSWORD --form user_login=$KWAVE_LOGIN http://www.k-wave.org/forum/bb-login.php && \
- curl -L -b cookie.txt http://www.k-wave.org/getfile.php?id=117 -o kwave.zip && \
-  unzip kwave.zip && \
-  rm kwave.zip cookie.txt
-# ------------------------------------------------------------------------------------
-
-
-# defines the output of the build
-RUN mkdir --parents /build/bin
-# copy src code: There's none for the moment
-#COPY --chown=${SC_USER_NAME}:${SC_USER_NAME} src/k_wave src/k_wave
-# ------------------------------------------------------------------------------------
-#TODO:
-# uncomment and adapt if build steps are necessary. For now, we use the compiled executable
-RUN cp -R /build/kspaceFirstOrder-CUDA /build/bin
-# ------------------------------------------------------------------------------------
-
-# --------------------------Production stage -------------------
-# Final cleanup up to reduce image size and startup setup
-# Runs as ${SC_USER_NAME} (non-root user)
+# Patch source to fix compilation issues in the feat_q_computing branch:
 #
-#  + /home/${SC_USER_NAME}     $HOME = WORKDIR
-#    + k_wave [${SC_USER_NAME}:${SC_USER_NAME}]
-#    + docker [${SC_USER_NAME}:${SC_USER_NAME}]
-#    + service.cli [${SC_USER_NAME}:${SC_USER_NAME}]
-#
-FROM base as production
+# 1. Case mismatch: sources include <KSpaceSolver/SolverCUDAKernels.cuh> (all-caps)
+#    but the actual file is SolverCudaKernels.cuh — create a symlink.
+# 2. KSpaceFirstOrderSolver.cpp uses std::ifstream (<fstream>), strcmp (<cstring>),
+#    sysconf/_SC_PHYS_PAGES/_SC_PAGE_SIZE (<unistd.h>/<sys/sysinfo.h>),
+#    and _mm_malloc/_mm_free (<xmmintrin.h>) without including the required headers.
+# 3. IndexMatrix.cpp uses ceilf() without #include <cmath>.
+# 4. CompressHelper.cpp uses std::numeric_limits without #include <limits>.
+RUN ln -s SolverCudaKernels.cuh KSpaceSolver/SolverCUDAKernels.cuh && \
+    sed -i 's|^#include <ctime>|#include <ctime>\n#include <fstream>\n#include <cstring>\n#include <unistd.h>\n#include <xmmintrin.h>|' \
+        KSpaceSolver/KSpaceFirstOrderSolver.cpp && \
+    sed -i '1s|^|#include <cmath>\n|' MatrixClasses/IndexMatrix.cpp && \
+    sed -i '1s|^|#include <limits>\n|' Compression/CompressHelper.cpp
 
-ENV SC_BUILD_TARGET production
-ENV SC_BOOT_MODE production
+# Build with CUDA 12.2.
+# SEMI linking: HDF5 + zlib + szip linked statically, cuFFT dynamically
+# (avoids the static-cuFFT relocation bug noted in the upstream Makefile).
+# CUDA_ARCH: cover Turing (sm_75) → Ada Lovelace (sm_89) → Hopper (sm_90).
+# LIBS is passed on the command line to override the ifeq(LINKING,SEMI) block,
+# since Ubuntu 22.04 places static libs in /usr/lib/x86_64-linux-gnu/ not /usr/lib/.
+RUN make -f Makefiles/Release/Makefile -j"$(nproc)" \
+    HDF5_DIR=/opt/hdf5 \
+    CUDA_DIR=/usr/local/cuda \
+    LINKING=SEMI \
+    LIBS="/opt/hdf5/lib/libhdf5_hl.a \
+          /opt/hdf5/lib/libhdf5.a \
+          /usr/lib/x86_64-linux-gnu/libz.a \
+          /usr/lib/x86_64-linux-gnu/libsz.a \
+          /usr/lib/x86_64-linux-gnu/libaec.a \
+          -lcufft -ldl" \
+    CUDA_ARCH="--generate-code arch=compute_75,code=sm_75 \
+               --generate-code arch=compute_80,code=sm_80 \
+               --generate-code arch=compute_86,code=sm_86 \
+               --generate-code arch=compute_89,code=sm_89 \
+               --generate-code arch=compute_90,code=sm_90"
 
+RUN mkdir -p /build/bin \
+ && cp kspaceFirstOrder-CUDA /build/bin/
+
+# ======================== Production stage ========================
+# simcore-user uid=8004(${SC_USER_NAME}) gid=8004(${SC_USER_NAME}) groups=8004(${SC_USER_NAME})
+FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS production
+
+LABEL maintainer=elisabettai
+
+ENV SC_USER_ID=8004 \
+    SC_USER_NAME=scu
+
+RUN adduser --uid ${SC_USER_ID} --disabled-password --gecos "" \
+        --shell /bin/sh --home /home/${SC_USER_NAME} ${SC_USER_NAME}
+
+ENV SC_BUILD_TARGET=production \
+    SC_BOOT_MODE=production
 
 ENV INPUT_FOLDER="/input" \
     OUTPUT_FOLDER="/output"
 
+# GPU access: all modern NVIDIA GPUs are visible.
+# Ada Lovelace (RTX 4070 = sm_89) and Hopper (sm_90) are fully supported.
+# Requires CUDA-capable driver ≥ 525 (ships CUDA 12.0 user-space ABI).
+# brand=tesla is intentionally omitted so consumer GPUs (GeForce) are accepted.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NVIDIA_REQUIRE_CUDA="cuda>=12.0 driver>=525"
 
 WORKDIR /home/${SC_USER_NAME}
 
-# ------------------------------------------------------------------------------------
-# uncomment and adapt to install runtime dependencies
 RUN apt-get update \
  && apt-get -y install --no-install-recommends \
+    jq \
     libgomp1 \
  && rm -rf /var/lib/apt/lists/*
-# ------------------------------------------------------------------------------------
+
+# kspaceFirstOrder-CUDA is compiled with SEMI linking: cuFFT is the only
+# dynamic CUDA math library dependency. The runtime image does not ship it,
+# so copy the versioned .so and its symlinks from the build stage.
+COPY --from=build /usr/local/cuda/lib64/libcufft.so* /usr/local/cuda/lib64/
 
 # copy docker bootup scripts
 COPY --chown=${SC_USER_NAME}:${SC_USER_NAME} docker/custom/*.sh docker/
@@ -99,9 +141,9 @@ COPY --chown=${SC_USER_NAME}:${SC_USER_NAME} service.cli/ service.cli/
 # necessary to be able to call run directly without sh in front
 ENV PATH="/home/${SC_USER_NAME}/service.cli:${PATH}"
 
-# copy binaries from build
+# copy binary from build stage
 COPY --from=build --chown=${SC_USER_NAME}:${SC_USER_NAME} /build/bin k_wave
 RUN chmod +x k_wave/*
 
-ENTRYPOINT [ "/bin/sh", "docker/entrypoint.sh", "/bin/sh", "-c" ]
+ENTRYPOINT [ "/bin/sh", "docker/entrypoint.sh" ]
 CMD ["run"]

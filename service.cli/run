@@ -1,0 +1,6 @@
+#!/bin/sh
+# oSPARC service entry point — called by entrypoint.sh via CMD ["run"]
+# Delegates to execute.sh which reads INPUT_* env vars and launches
+# kspaceFirstOrder-CUDA.
+
+exec "$(dirname "$0")/execute.sh"
