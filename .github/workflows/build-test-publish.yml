@@ -1,58 +1,36 @@
-name: Github-CI Push/PR k-wave
+name: Build and check image
 
 on:
+  # Run the workflow for pushes to the main branch
   push:
-  pull_request:
+    branches:
+      - main
 
-env:
-  # secrets can be set in settings/secrets on github
-  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
-  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-  KWAVE_LOGIN: ${{ secrets.KWAVE_LOGIN }}
-  KWAVE_PASSWORD: ${{ secrets.KWAVE_PASSWORD }}
+  # Run the workflow for pull requests (from forks or within the repo)
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
 jobs:
-  build:
-    name: building k-wave
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        python: [3.9]
-        os: [ubuntu-22.04]
-      fail-fast: false
+  verify-image-build:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: setup python environment
-        uses: actions/setup-python@v4
+      - name: Checkout repo content
+        uses: actions/checkout@v6
+
+      - name: ooil version
+        uses: docker://itisfoundation/ci-service-integration-library:v2.2.8
         with:
-          python-version: ${{ matrix.python }}
-      - name: show versions
-        run: ./.github/show_system_versions.bash
-      - name: set owner variable
-        run: echo "OWNER=${GITHUB_REPOSITORY%/*}" >> $GITHUB_ENV
-      - name: set docker image tag
-        if: github.ref != 'refs/heads/main'
-        run: echo "DOCKER_IMAGE_TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
-      - name: get current image if available
-        run: make pull-latest || true
-      - name: build
-        run: |
-          make VERSION
-          make build
-          make info-build
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        name: Event is push to main
-        run: |
-          ./.github/dockerhub_login.bash
-          DOCKER_IMAGE_TAG=$(< VERSION)
-          echo "Docker image tag is ${DOCKER_IMAGE_TAG}"
-          make tag-version
-          make push
-      - if: github.event_name == 'push' && ${{ github.event.pull_request.merged }}
-        name: Event is PR is merged
-        run: |
-          ./.github/dockerhub_login.bash
-          DOCKER_IMAGE_TAG=$(< VERSION)
-          echo "Docker image tag is ${DOCKER_IMAGE_TAG}"
-          make tag-version
-          make push
+          args: ooil --version
+      - name: Assemble docker compose spec
+        uses: docker://itisfoundation/ci-service-integration-library:v2.2.8
+        with:
+          args: ooil compose
+      - name: Build image
+        uses: docker://itisfoundation/ci-service-integration-library:v2.2.8
+        with:
+          args: docker compose build
+      - name: test k-wave
+        run: make run-local
