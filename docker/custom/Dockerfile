@@ -10,6 +10,8 @@ LABEL maintainer=lmoyasans
 
 ENV SC_BUILD_TARGET=build
 
+ENV KWAVE_COMMIT=44ca4ed1fce2319c1558ec5ba3a165d3d44a5da1
+
 RUN apt-get update \
  && apt-get -y install --no-install-recommends \
     git \
@@ -34,8 +36,9 @@ RUN ls /usr/lib/x86_64-linux-gnu/libsz.a 2>/dev/null \
 
 WORKDIR /build
 
-# Clone the open-source k-Wave CUDA fluid solver.
-RUN git clone --depth 1 https://github.com/klepo/k-Wave-Fluid-CUDA.git .
+# Clone the open-source k-Wave CUDA fluid solver (pinned to known-good commit).
+RUN git clone https://github.com/klepo/k-Wave-Fluid-CUDA.git . \
+ && git checkout ${KWAVE_COMMIT}
 
 # Patch source to fix compilation issues in the feat_q_computing branch:
 #
