@@ -65,7 +65,7 @@ build: | compose-spec   ## build docker image
 run-local: ## runs image with local configuration
 	IMAGE_TO_RUN=${IMAGE_NAME} \
 	TAG_TO_RUN=${IMAGE_TAG} \
-	docker compose --file docker-compose-local.yml up --abort-on-container-exit --exit-code-from k-wave
+	docker compose --file docker-compose-local.yml up
 
 .PHONY: publish-local
 publish-local: ## push to local throw away registry to test integration
