@@ -4,7 +4,3 @@ services:
     build:
       dockerfile: docker/custom/Dockerfile
       target: production
-      # KWAVE_LOGIN / KWAVE_PASSWORD removed in v2.0.0:
-      # the binary is now built from open-source source code
-      # (https://github.com/klepo/k-Wave-Fluid-CUDA) using CUDA 12.2,
-      # so no k-wave.org credentials are required at build time.
