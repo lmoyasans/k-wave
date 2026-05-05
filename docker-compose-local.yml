@@ -4,24 +4,6 @@ services:
     environment:
       - INPUT_FOLDER=/tmp/inputs
       - OUTPUT_FOLDER=/tmp/outputs
-      # inputs from validation/input/inputs.json
-      - INPUT_2=5
-      - INPUT_3=false
-      - INPUT_4=false
-      - INPUT_5=false
-      - INPUT_6=false
-      - INPUT_7=false
-      - INPUT_8=false
-      - INPUT_9=true
-      - INPUT_10=false
-      - INPUT_11=false
-      - INPUT_12=false
-      - INPUT_13=false
-      - INPUT_14=false
-      - INPUT_15=false
-      - INPUT_16=false
-      - INPUT_17=2
-      - INPUT_18=false
     volumes:
       - ${PWD}/validation/input:/tmp/inputs
       - ${PWD}/validation/output:/tmp/outputs

@@ -1,6 +1,123 @@
-#!/bin/sh
-# oSPARC service entry point — called by entrypoint.sh via CMD ["run"]
-# Delegates to execute.sh which reads INPUT_* env vars and launches
-# kspaceFirstOrder-CUDA.
+#!/bin/bash
+# set sh strict mode
+set -o errexit
+set -o nounset
+IFS=$(printf '\n\t')
 
-exec "$(dirname "$0")/execute.sh"
+cd /home/scu/k_wave
+
+echo "starting service as"
+echo   User    : "$(id "$(whoami)")"
+echo   Workdir : "$(pwd)"
+echo "..."
+echo
+# ----------------------------------------------------------------
+# This script shall be modified according to the needs in order to run the service
+
+# Read inputs from inputs.json (written by the computational sidecar)
+INPUTS_JSON="${INPUT_FOLDER}/inputs.json"
+if [ -f "${INPUTS_JSON}" ]; then
+    echo "Reading inputs from ${INPUTS_JSON}..."
+    INPUT_2=$(jq -r '.input_2' "${INPUTS_JSON}")
+    INPUT_3=$(jq -r '.input_3' "${INPUTS_JSON}")
+    INPUT_4=$(jq -r '.input_4' "${INPUTS_JSON}")
+    INPUT_5=$(jq -r '.input_5' "${INPUTS_JSON}")
+    INPUT_6=$(jq -r '.input_6' "${INPUTS_JSON}")
+    INPUT_7=$(jq -r '.input_7' "${INPUTS_JSON}")
+    INPUT_8=$(jq -r '.input_8' "${INPUTS_JSON}")
+    INPUT_9=$(jq -r '.input_9' "${INPUTS_JSON}")
+    INPUT_10=$(jq -r '.input_10' "${INPUTS_JSON}")
+    INPUT_11=$(jq -r '.input_11' "${INPUTS_JSON}")
+    INPUT_12=$(jq -r '.input_12' "${INPUTS_JSON}")
+    INPUT_13=$(jq -r '.input_13' "${INPUTS_JSON}")
+    INPUT_14=$(jq -r '.input_14' "${INPUTS_JSON}")
+    INPUT_15=$(jq -r '.input_15' "${INPUTS_JSON}")
+    INPUT_16=$(jq -r '.input_16' "${INPUTS_JSON}")
+    INPUT_17=$(jq -r '.input_17' "${INPUTS_JSON}")
+    INPUT_18=$(jq -r '.input_18' "${INPUTS_JSON}")
+fi
+
+# From isolve: checking for resources limit env vars injected by osparc
+SIMCORE_NANO_CPUS_LIMIT="${SIMCORE_NANO_CPUS_LIMIT:-0}"
+echo "Setting/getting CPU limit gives this: ${SIMCORE_NANO_CPUS_LIMIT}"
+if [ "${SIMCORE_NANO_CPUS_LIMIT}" -ne "0" ]
+then
+    echo "Found NANO_CPU limits: ${SIMCORE_NANO_CPUS_LIMIT}"
+    NANO_CPU_DIVISOR=1000000000
+    MAX_CPUS=$((${SIMCORE_NANO_CPUS_LIMIT} / ${NANO_CPU_DIVISOR}))
+    # use 1 if this is 0 otherwise floor is probably fine
+    if [ "${MAX_CPUS}" -eq "0" ]
+    then
+        MAX_CPUS=1
+    fi
+    echo "Setting Z43_MAX_CPU_RESOURCES to " "${MAX_CPUS}"
+    export Z43_MAX_CPU_RESOURCES="${MAX_CPUS}"
+else
+    MAX_CPUS=1
+fi
+
+# Create an array of arguments, mandatory ones are -i and -o, the others comes from the input ports, except CPU threads
+# For the list of arguments see http://www.k-wave.org/manual/k-wave_user_manual_1.1.pdf, page 54
+args=(
+-i ${INPUT_FOLDER}/input.h5
+-o ${OUTPUT_FOLDER}/output.h5
+-c ${INPUT_2}
+-t ${MAX_CPUS}
+-s ${INPUT_17}
+--verbose 2
+)
+echo "Parsing input ports..."
+# Optional output flags: if checked in the UI -> input is true -> add flag
+if [ $INPUT_3 = true ]; then
+    args+=(--p_rms)
+fi
+if [ $INPUT_4 = true ]; then
+    args+=(--p_max)
+fi
+if [ $INPUT_5 = true ]; then
+    args+=(--p_min)
+fi
+if [ $INPUT_6 = true ]; then
+    args+=(--p_max_all)
+fi
+if [ $INPUT_7 = true ]; then
+    args+=(--p_min_all)
+fi
+if [ $INPUT_8 = true ]; then
+    args+=(--p_final)
+fi
+if [ $INPUT_9 == true ]; then
+    args+=(-u)
+fi
+if [ $INPUT_10 = true ]; then
+    args+=(--u_non_staggered_raw)
+fi
+if [ $INPUT_11 = true ]; then
+    args+=(--u_rms)
+fi
+if [ $INPUT_12 = true ]; then
+    args+=(--u_max)
+fi
+if [ $INPUT_13 = true ]; then
+    args+=(--u_min)
+fi
+if [ $INPUT_14 = true ]; then
+    args+=(--u_max_all)
+fi
+if [ $INPUT_15 = true ]; then
+    args+=(--u_min_all)
+fi
+if [ $INPUT_16 = true ]; then
+    args+=(--u_final)
+fi
+if [ $INPUT_18 = true ]; then
+    args+=(--copy_sensor_mask)
+fi
+
+echo "Launching kspaceFirstOrder-CUDA with args ${args[@]}"
+./kspaceFirstOrder-CUDA "${args[@]}"
+
+# then retrieve the output and move it to the $OUTPUT_FOLDER
+# as defined in the output labels
+# Output file is already in ${OUTPUT_FOLDER}/ (see -o argument)
+
