@@ -25,3 +25,4 @@ pytest_*.xml
 !.dockerignore
 # git ignore
 !.gitignore
+docker-compose.yml
